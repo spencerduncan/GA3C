@@ -50,14 +50,8 @@ class ThreadPredictor(Thread):
             ids[0], states[0] = self.server.prediction_q.get()
 
             size = 1
-            while size < Config.PREDICTION_BATCH_SIZE and not self.server.prediction_q.empty():
-                ids[size], states[size] = self.server.prediction_q.get()
-                size += 1
-
             batch = states[:size]
             p, v = self.server.model.predict_p_and_v(batch)
-            print("ya?")
 
-            for i in range(size):
-                if ids[i] < len(self.server.agents):
-                    self.server.agents[ids[i]].wait_q.put((p[i], v[i]))
+            if ids[0] < len(self.server.agents):
+                self.server.agents[ids[0]].wait_q.put((p[0], v[0]))

@@ -46,7 +46,7 @@ class Config:
     
     # If the dynamic configuration is on, these are the initial values.
     # Number of Agents
-    AGENTS = 5
+    AGENTS = 32
     # Number of Predictors
     PREDICTORS = 1
     # Number of Trainers
@@ -83,7 +83,7 @@ class Config:
     IMAGE_HEIGHT = 84
 
     # Total number of episodes and annealing frequency
-    EPISODES = 400000
+    EPISODES = 300
     ANNEALING_EPISODE_COUNT = 400000
 
     # Entropy regualrization hyper-parameter
@@ -124,7 +124,7 @@ class Config:
     SAVE_FREQUENCY = 1000
     
     # Print stats every PRINT_STATS_FREQUENCY episodes
-    PRINT_STATS_FREQUENCY = 1
+    PRINT_STATS_FREQUENCY = 100
     # The window to average stats
     STAT_ROLLING_MEAN_WINDOW = 1000
 
