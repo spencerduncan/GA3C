@@ -56,6 +56,7 @@ class ThreadPredictor(Thread):
 
             batch = states[:size]
             p, v = self.server.model.predict_p_and_v(batch)
+            print("ya?")
 
             for i in range(size):
                 if ids[i] < len(self.server.agents):
