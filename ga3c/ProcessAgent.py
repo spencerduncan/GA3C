@@ -29,6 +29,7 @@ from multiprocessing import Process, Queue, Value
 
 import numpy as np
 import time
+import tensorflow as tf
 
 from Config import Config
 from Environment import Environment
@@ -40,8 +41,9 @@ class ProcessAgent(Process):
         super(ProcessAgent, self).__init__()
 
         self.id = id
-        self.prediction_q = prediction_q
-        self.training_q = training_q
+        self.prediction_q = []
+        self.pred_red     = False
+        self.training_q = ()
         self.episode_log_q = episode_log_q
 
         self.env = Environment()
@@ -70,7 +72,11 @@ class ProcessAgent(Process):
 
     def predict(self, state):
         # put the state in the prediction q
-        self.prediction_q.put((self.id, state))
+     #   with self.server.model.graph.as_default():
+      #      with tf.device('/cpu:0'):
+       #     _id = tf.placeholder(tf.float32, shape=())
+        #    _state = tf.placeholder(tf.float32, [Config.IMAGE_HEIGHT, Config.IMAGE_WIDTH, Config.STACKED_FRAMES])
+        self.prediction_q = ([state, self.id])
         # wait for the prediction to come back
         p, v = self.wait_q.get()
         return p, v
@@ -134,5 +140,5 @@ class ProcessAgent(Process):
                 if x_ is None:
                     break
                 total_length += len(r_) + 1  # +1 for last frame that we drop
-                self.training_q.put((x_, r_, a_))
+                self.training_q.append = ([x_, r_, a_])
             self.episode_log_q.put((datetime.now(), total_reward, total_length))

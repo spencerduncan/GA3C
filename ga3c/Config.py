@@ -46,11 +46,11 @@ class Config:
     
     # If the dynamic configuration is on, these are the initial values.
     # Number of Agents
-    AGENTS = 32
+    AGENTS = 8
     # Number of Predictors
-    PREDICTORS = 1
+    PREDICTORS = 2
     # Number of Trainers
-    TRAINERS = 1
+    TRAINERS = 2
 
     # Device
     DEVICE = 'gpu:0'
@@ -124,9 +124,9 @@ class Config:
     SAVE_FREQUENCY = 1000
     
     # Print stats every PRINT_STATS_FREQUENCY episodes
-    PRINT_STATS_FREQUENCY = 100
+    PRINT_STATS_FREQUENCY = 1
     # The window to average stats
-    STAT_ROLLING_MEAN_WINDOW = 1000
+    STAT_ROLLING_MEAN_WINDOW = 100
 
     # Results filename
     RESULTS_FILENAME = 'results.txt'

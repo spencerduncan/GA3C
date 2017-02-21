@@ -27,31 +27,32 @@
 from threading import Thread
 
 import numpy as np
+import tensorflow as tf
 
 from Config import Config
 
 
-class ThreadPredictor(Thread):
-    def __init__(self, server, id):
-        super(ThreadPredictor, self).__init__()
-        self.setDaemon(True)
+def ThreadPredictor(coord, server):
+    with server.model.graph.as_default():
+        with tf.device('/cpu:0'):
+            ids = tf.placeholder(tf.float32, [None])
+            states = tf.placeholder(tf.float32,
+                [None, Config.IMAGE_HEIGHT, Config.IMAGE_WIDTH, Config.STACKED_FRAMES])
+        while not coord.should_stop():
+            for i in range(len(server.agents)):
+                if server.agents[i].pred_red:
+                    print("nes?")
+                    server.prediction_q.enqueue(server.agents[i].prediction_q)
+         #       else:
+         #           print(server.agents[i].pred_red)
+            ids, state = server.prediction_q.dequeue_up_to(Config.PREDICTION_BATCH_SIZE)
 
-        self.id = id
-        self.server = server
-        self.exit_flag = False
+            try:
+                 p, v, _ids = server.model.predict_p_and_v(state, ids)
+                 print("nes?")
+            except TypeError:
+                continue
 
-    def run(self):
-        ids = np.zeros(Config.PREDICTION_BATCH_SIZE, dtype=np.uint16)
-        states = np.zeros(
-            (Config.PREDICTION_BATCH_SIZE, Config.IMAGE_HEIGHT, Config.IMAGE_WIDTH, Config.STACKED_FRAMES),
-            dtype=np.float32)
-
-        while not self.exit_flag:
-            ids[0], states[0] = self.server.prediction_q.get()
-
-            size = 1
-            batch = states[:size]
-            p, v = self.server.model.predict_p_and_v(batch)
-
-            if ids[0] < len(self.server.agents):
-                self.server.agents[ids[0]].wait_q.put((p[0], v[0]))
+            for i in range(_ids.shape[0]):
+                if ids[i] < len(server.agents):
+                        server.agents[ids[i]].wait_q.put((p[i], v[i]))

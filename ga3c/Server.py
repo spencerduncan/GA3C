@@ -26,6 +26,8 @@
 
 from multiprocessing import Queue
 
+import threading
+
 import time
 
 from Config import Config
@@ -37,15 +39,21 @@ from ThreadDynamicAdjustment import ThreadDynamicAdjustment
 from ThreadPredictor import ThreadPredictor
 from ThreadTrainer import ThreadTrainer
 
+import tensorflow as tf
+
 
 class Server:
     def __init__(self):
         self.stats = ProcessStats()
 
-        self.training_q = Queue(maxsize=Config.MAX_QUEUE_SIZE)
-        self.prediction_q = Queue(maxsize=Config.MAX_QUEUE_SIZE)
 
         self.model = NetworkVP(Config.DEVICE, Config.NETWORK_NAME, Environment().get_num_actions())
+
+        with self.model.graph.as_default():
+            with tf.device('/cpu:0'):
+                self.training_q = tf.FIFOQueue(Config.MAX_QUEUE_SIZE, [tf.float32, tf.float32, tf.float32])
+                self.prediction_q = tf.FIFOQueue(Config.MAX_QUEUE_SIZE, [tf.float32, tf.float32])
+
         if Config.LOAD_CHECKPOINT:
             self.stats.episode_count.value = self.model.load()
 
@@ -56,6 +64,8 @@ class Server:
         self.predictors = []
         self.trainers = []
         self.dynamic_adjustment = ThreadDynamicAdjustment(self)
+
+        self.coord = tf.train.Coordinator()
 
     def add_agent(self):
         self.agents.append(
@@ -68,27 +78,26 @@ class Server:
         self.agents.pop()
 
     def add_predictor(self):
-        self.predictors.append(ThreadPredictor(self, len(self.predictors)))
+        self.predictors.append(threading.Thread(target=ThreadPredictor, args=(self.coord,self)))
         self.predictors[-1].start()
 
     def remove_predictor(self):
-        self.predictors[-1].exit_flag = True
-        self.predictors[-1].join()
+        self.coord.join(predictors[-1])
         self.predictors.pop()
 
     def add_trainer(self):
-        self.trainers.append(ThreadTrainer(self, len(self.trainers)))
+        self.trainers.append(threading.Thread(target=ThreadTrainer, args=(self.coord,self)))
         self.trainers[-1].start()
 
     def remove_trainer(self):
-        self.trainers[-1].exit_flag = True
         self.trainers[-1].join()
+        self.coord.join(trainers[-1])
         self.trainers.pop()
 
-    def train_model(self, x_, r_, a_, trainer_id):
-        self.model.train(x_, r_, a_, trainer_id)
+    def train_model(self, x_, r_, a_):
+        self.model.train(x_, r_, a_)
         self.training_step += 1
-        self.frame_counter += x_.shape[0]
+#        self.frame_counter += x_.shape[0]
 
         self.stats.training_count.value += 1
         self.dynamic_adjustment.temporal_training_count += 1

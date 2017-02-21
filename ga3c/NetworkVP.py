@@ -71,13 +71,17 @@ class NetworkVP:
             self.x = tf.placeholder(
                 tf.float32, [None, self.img_height, self.img_width, self.img_channels], name='X')
             self.y_r = tf.placeholder(tf.float32, [None], name='Yr')
+            self.tid = tf.placeholder(tf.float32, [None])
             self.action_index = tf.placeholder(tf.float32, [None, self.num_actions])
+  #          self.x_q = tf.FIFOQueue(Config.MAX_QUEUE_SIZE, [tf.float32, tf.float32, tf.float32])
+   #         self.y_q = tf.FIFOQueue(Config.MAX_QUEUE_SIZE, [tf.float32])
+    #        self.idq = tf.FIFOQueue(Config.MAX_QUEUE_SIZE, [tf.float32])
 
-        self.stager = data_flow_ops.StagingArea([tf.float32, tf.float32, tf.float32], shapes=[[None, self.img_height, self.img_width, self.img_channels], [None], [None, self.num_actions]], shared_name='staging')
+        self.stager = data_flow_ops.StagingArea([tf.float32, tf.float32, tf.float32, tf.float32], shapes=[[None, self.img_height, self.img_width, self.img_channels], [None], [None], [None, self.num_actions]], shared_name='staging')
 
-        self.stage = self.stager.put([self.x, self.y_r, self.action_index])
+        self.stage = self.stager.put([self.x, self.y_r, self.tid, self.action_index])
 
-        self._x, self._y_r, self._action_index =  self.stager.get()
+        self._x, self._y_r, self._tid, self._action_index =  self.stager.get()
 
         self.var_beta = tf.placeholder(tf.float32, name='beta', shape=[])
         self.var_learning_rate = tf.placeholder(tf.float32, name='lr', shape=[])
@@ -231,31 +235,45 @@ class NetworkVP:
         return self.predict_p(x[None, :])[0]
 
     def predict_v(self, x):
-        y_r = np.zeros(x.shape[0])
+        if not x.shape:
+            return 0
+        y_r = tf.zeros(x.shape[0])
+        ids = tf.zeros(x.shape[0])
         a = np.zeros([x.shape[0], self.num_actions])
-        _, prediction = self.sess.run([self.stage, self.logits_v], feed_dict={self.x: x, self.y_r: y_r, self.action_index: a})
+        _, prediction = self.sess.run([self.stage, self.logits_v], feed_dict={self.x: x, self.y_r: y_r, self.tid: ids, self.action_index: a})
         return prediction
 
     def predict_p(self, x):
-        y_r = np.zeros(x.shape[0])
+        if not x.shape:
+            return 0
+        y_r = tf.zeros(x.shape[0])
+        ids = tf.zeros(x.shape[0])
         a = np.zeros([x.shape[0], self.num_actions])
-        _, prediction = self.sess.run([self.stage, self.softmax_p], feed_dict={self.x: x, self.y_r: y_r, self.action_index: a})
+        _, prediction = self.sess.run([self.stage, self.softmax_p], feed_dict={self.x: x, self.y_r: y_r, self.tid: ids, self.action_index: a})
         return prediction
     
-    def predict_p_and_v(self, x):
-        y_r = np.zeros(x.shape[0])
-        a = np.zeros([x.shape[0], self.num_actions])
-        _, p, v = self.sess.run([self.stage, self.softmax_p, self.logits_v], feed_dict={self.x: x, self.y_r: y_r, self.action_index: a})
-        return [p,v]
+    def predict_p_and_v(self, x, ids):
+        if not x.shape:
+            return 0
+        y_r = tf.zeros(x.shape[0])
+        a = tf.zeros([x.shape[0], self.num_actions])
+        _, p, v, id = self.sess.run([self.stage, self.softmax_p, self.logits_v, self._tid], feed_dict={self.x: x, self.y_r: y_r, self.tid: ids, self.action_index: a})
+        return [p,v,id]
     
-    def train(self, x, y_r, a, trainer_id):
+    def train(self, x, y_r, a):
+        if not x.shape:
+            return 0
         feed_dict = self.__get_base_feed_dict()
-        feed_dict.update({self.x: x, self.y_r: y_r, self.action_index: a})
+        ids = tf.zeros(x.shape[0])
+        feed_dict.update({self.x: x, self.y_r: y_r, self.tid: ids, self.action_index: a})
         self.sess.run([self.stage, self.train_op], feed_dict=feed_dict)
 
     def log(self, x, y_r, a):
+        if not x.shape:
+            return 0
         feed_dict = self.__get_base_feed_dict()
-        feed_dict.update({self.x: x, self.y_r: y_r, self.action_index: a})
+        ids = tf.zeros(x.shape[0])
+        feed_dict.update({self.x: x, self.y_r: y_r, self.tid: ids, self.action_index: a})
         _, step, summary = self.sess.run([self.stage, self.global_step, self.summary_op], feed_dict=feed_dict)
         self.log_writer.add_summary(summary, step)
 

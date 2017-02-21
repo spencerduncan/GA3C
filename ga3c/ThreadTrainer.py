@@ -30,19 +30,14 @@ import numpy as np
 from Config import Config
 
 
-class ThreadTrainer(Thread):
-    def __init__(self, server, id):
-        super(ThreadTrainer, self).__init__()
-        self.setDaemon(True)
+def ThreadTrainer(coord, server):
+    while not coord.should_stop():
+            for i in range(len(server.agents)):
+                if len(server.agents[i].training_q)>0:
+                    server.training_q.enqueue_many(server.agents[i].training_q)
+                    server.agents[i].training_q = ()
 
-        self.id = id
-        self.server = server
-        self.exit_flag = False
-
-    def run(self):
-        while not self.exit_flag:
-            batch_size = 0
-            x_, r_, a_ = self.server.training_q.get()
+            x_, r_, a_ = server.training_q.dequeue_up_to(Config.PREDICTION_BATCH_SIZE)
             
             if Config.TRAIN_MODELS:
-                self.server.train_model(x_, r_, a_, self.id)
+                server.train_model(x_, r_, a_)
