@@ -24,19 +24,11 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from threading import Thread
-import numpy as np
-
 from Config import Config
 
 
 def ThreadTrainer(coord, server):
     while not coord.should_stop():
-            for i in range(len(server.agents)):
-                if len(server.agents[i].training_q)>0:
-                    server.training_q.enqueue_many(server.agents[i].training_q)
-                    server.agents[i].training_q = ()
-
             x_, r_, a_ = server.training_q.dequeue_up_to(Config.PREDICTION_BATCH_SIZE)
             
             if Config.TRAIN_MODELS:

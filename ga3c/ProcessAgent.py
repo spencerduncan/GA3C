@@ -36,109 +36,96 @@ from Environment import Environment
 from Experience import Experience
 
 
-class ProcessAgent(Process):
-    def __init__(self, id, prediction_q, training_q, episode_log_q):
-        super(ProcessAgent, self).__init__()
+@staticmethod
+def _accumulate_rewards(experiences, discount_factor, terminal_reward):
+    reward_sum = terminal_reward
+    for t in reversed(range(0, len(experiences)-1)):
+        r = np.clip(experiences[t].reward, Config.REWARD_MIN, Config.REWARD_MAX)
+        reward_sum = discount_factor * reward_sum + r
+        experiences[t].reward = reward_sum
+    return experiences[:-1]
 
-        self.id = id
-        self.prediction_q = []
-        self.pred_red     = False
-        self.training_q = ()
-        self.episode_log_q = episode_log_q
+def convert_data(env, experiences):
+    x_ = np.array([exp.state for exp in experiences])
+    a_ = np.eye(env.get_num_actions())[np.array([exp.action for exp in experiences])].astype(np.float32)
+    r_ = np.array([exp.reward for exp in experiences])
+    return x_, r_, a_
 
-        self.env = Environment()
-        self.num_actions = self.env.get_num_actions()
-        self.actions = np.arange(self.num_actions)
+def run_episode(env, server, actions, id):
+    env.reset()
+    done = False
+    experiences = []
 
-        self.discount_factor = Config.DISCOUNT
-        # one frame at a time
-        self.wait_q = Queue(maxsize=1)
-        self.exit_flag = Value('i', 0)
+    time_count = 0
+    reward_sum = 0.0
 
-    @staticmethod
-    def _accumulate_rewards(experiences, discount_factor, terminal_reward):
-        reward_sum = terminal_reward
-        for t in reversed(range(0, len(experiences)-1)):
-            r = np.clip(experiences[t].reward, Config.REWARD_MIN, Config.REWARD_MAX)
-            reward_sum = discount_factor * reward_sum + r
-            experiences[t].reward = reward_sum
-        return experiences[:-1]
+    while not done:
+        # very first few frames
+        if env.current_state is None:
+            env.step(0)  # 0 == NOOP
+            continue
 
-    def convert_data(self, experiences):
-        x_ = np.array([exp.state for exp in experiences])
-        a_ = np.eye(self.num_actions)[np.array([exp.action for exp in experiences])].astype(np.float32)
-        r_ = np.array([exp.reward for exp in experiences])
-        return x_, r_, a_
+        with server.model.graph.as_default():
+            with tf.device('/cpu:0'):
+                server.prediction_q.enqueue([id, env.current_state])
+        prediction, value = wait_q.get()
 
-    def predict(self, state):
-        # put the state in the prediction q
-     #   with self.server.model.graph.as_default():
-      #      with tf.device('/cpu:0'):
-       #     _id = tf.placeholder(tf.float32, shape=())
-        #    _state = tf.placeholder(tf.float32, [Config.IMAGE_HEIGHT, Config.IMAGE_WIDTH, Config.STACKED_FRAMES])
-        self.prediction_q = ([state, self.id])
-        # wait for the prediction to come back
-        p, v = self.wait_q.get()
-        return p, v
-
-    def select_action(self, prediction):
         if Config.PLAY_MODE:
             action = np.argmax(prediction)
         else:
-            action = np.random.choice(self.actions, p=prediction)
-        return action
+            action = np.random.choice(actions, p=prediction)
 
-    def run_episode(self):
-        self.env.reset()
-        done = False
-        experiences = []
+        reward, done = env.step(action)
+        reward_sum += reward
 
-        time_count = 0
-        reward_sum = 0.0
+        exp = Experience(env.previous_state, action, prediction, reward, done)
+        experiences.append(exp)
 
-        while not done:
-            # very first few frames
-            if self.env.current_state is None:
-                self.env.step(0)  # 0 == NOOP
-                continue
+        if done or time_count == Config.TIME_MAX:
+            terminal_reward = 0 if done else value
 
-            prediction, value = self.predict(self.env.current_state)
-            action = self.select_action(prediction)
-            reward, done = self.env.step(action)
-            reward_sum += reward
-            exp = Experience(self.env.previous_state, action, prediction, reward, done)
-            experiences.append(exp)
+            updated_exps = _accumulate_rewards(experiences, Config.DISCOUNT, terminal_reward)
+            if len(updated_exps) == 0:
+                yield None, None, None, total_reward
+            else:
+                x_, r_, a_ = self.convert_data(env, updated_exps)
+                yield x_, r_, a_, reward_sum
 
-            if done or time_count == Config.TIME_MAX:
-                terminal_reward = 0 if done else value
+            # reset the tmax count
+            time_count = 0
+            # keep the last experience for the next batch
+            experiences = [experiences[-1]]
+            reward_sum = 0.0
 
-                updated_exps = ProcessAgent._accumulate_rewards(experiences, self.discount_factor, terminal_reward)
-                if len(updated_exps) == 0:
-                    yield None, None, None, total_reward
-                else:
-                    x_, r_, a_ = self.convert_data(updated_exps)
-                    yield x_, r_, a_, reward_sum
+        time_count += 1
 
-                # reset the tmax count
-                time_count = 0
-                # keep the last experience for the next batch
-                experiences = [experiences[-1]]
-                reward_sum = 0.0
+def ProcessAgent(coord, server, id):
+    prediction_q = []
+    pred_red     = False
+        
+    training_q = ()
+    episode_log_q = episode_log_q
+        
+    env = Environment()
+    num_actions = env.get_num_actions()
+    actions = np.arange(self.num_actions)
+    discount_factor = Config.DISCOUNT
+    #one frame at a time
+    wait_q = Queue(maxsize=1)
 
-            time_count += 1
-
-    def run(self):
-        # randomly sleep up to 1 second. helps agents boot smoothly.
-        time.sleep(np.random.rand())
-        np.random.seed(np.int32(time.time() % 1 * 1000 + self.id * 10))
-
-        while self.exit_flag.value == 0:
-            total_reward = 0
-            total_length = 0
-            for x_, r_, a_, reward_sum in self.run_episode():
-                total_reward += reward_sum
-                if x_ is None:
-                    break
+    with server.model.graph.as_default():
+        with tf.device('/cpu:0'):
+            while not coord.should_stop():
+        
+                total_reward = 0
+                total_length = 0
+                for x_, r_, a_, reward_sum in self.run_episode(env, server, actions, id):
+                    total_reward += reward_sum
+                    if x_ is None:
+                        break
                 total_length += len(r_) + 1  # +1 for last frame that we drop
-                self.training_q.append = ([x_, r_, a_])
-            self.episode_log_q.put((datetime.now(), total_reward, total_length))
+                server.training_q.enqueue([x_, r_, a_])
+                server.episode_log_q.put((datetime.now(), total_reward, total_length))
+        
+   
+    
